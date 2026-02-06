@@ -114,3 +114,41 @@ async function fetchRelated() {
         relatedContainer.appendChild(div);
     });
 }
+
+getMovieDetails();
+fetchRelated();
+
+// Server change function (Updated with new domain)
+function addAlternativeServers(movieId, type) {
+    const infoDiv = document.querySelector('.info');
+    
+    const serverDiv = document.createElement('div');
+    serverDiv.style.marginTop = "20px";
+    serverDiv.innerHTML = `
+        <h4 style="color: #e50914; margin-bottom: 10px;">If server 1 doesn't work, try Server 2:</h4>
+        <div style="display: flex; gap: 10px;">
+            <button onclick="changeServer('vidsrc')" style="background: #333; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">Server 1 (Default)</button>
+            <button onclick="changeServer('2embed')" style="background: #333; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer;">Server 2 (Alternative)</button>
+        </div>
+    `;
+    infoDiv.appendChild(serverDiv);
+}
+
+window.changeServer = function(serverType) {
+    const iframe = document.getElementById('videoIframe');
+    const placeholder = document.getElementById('playerPlaceholder');
+    const videoContainer = document.getElementById('videoContainer');
+    
+    placeholder.style.display = 'none';
+    videoContainer.style.display = 'block';
+
+    if (serverType === 'vidsrc') {
+        iframe.src = `https://vidsrc-embed.ru/embed/${type}?tmdb=${movieId}`;
+    } else if (serverType === '2embed') {
+        iframe.src = `https://www.2embed.cc/embed/${movieId}`;
+    }
+};
+
+setTimeout(() => {
+    addAlternativeServers(movieId, type);
+}, 2000);
