@@ -5,44 +5,44 @@ const IMG_URL = 'https://image.tmdb.org/t/p/w500';
 let currentPage = 1;
 let currentType = 'movie'; 
 let currentGenre = '';
+let allowedMovieIds = []; // movies_db.json থেকে আসা ID গুলো এখানে থাকবে
+let userCountry = 'US'; // ডিফল্ট কান্ট্রি
 
 const movieContainer = document.getElementById('movies');
 const searchInput = document.getElementById('search');
 const genreSelect = document.getElementById('genreSelect');
 const loadMoreBtn = document.getElementById('loadMore');
 
-async function fetchContent(isNew = true) {
-    if (isNew) {
-        currentPage = 1;
-        movieContainer.innerHTML = '';
-    }
-
-    const query = searchInput.value.trim();
-    let url;
-
-    if (query) {
-        // Search korle 'multi' search use hobe jate Movie+TV duto-i ashe
-        url = `${BASE_URL}/search/multi?api_key=${API_KEY}&query=${query}&page=${currentPage}`;
-    } else {
-        url = `${BASE_URL}/discover/${currentType}?api_key=${API_KEY}&page=${currentPage}&with_genres=${currentGenre}`;
-    }
-
+// ১. ডাটাবেস এবং ইউজারের লোকেশন লোড করার ফাংশন
+async function initializeApp() {
     try {
-        const res = await fetch(url);
-        const data = await res.json();
-        renderContent(data.results);
+        // movies_db.json থেকে অনুমোদিত মুভির লিস্ট আনা
+        const dbRes = await fetch('movies_db.json');
+        const dbData = await dbRes.json();
+        allowedMovieIds = dbData.map(item => String(item.tmdb_id));
+
+        // ইউজারের কান্ট্রি ডিটেক্ট করা
+        const geoRes = await fetch('https://ipapi.co/json/');
+        const geoData = await geoRes.json();
+        userCountry = geoData.country_code || 'US';
+        
+        console.log(`User Country: ${userCountry}`);
+        fetchRegionalContent();
     } catch (error) {
-        console.error('Error:', error);
+        console.error('Initialization Error:', error);
+        fetchRegionalContent(); // এরর হলেও ডিফল্ট কন্টেন্ট লোড হবে
     }
 }
 
-function renderContent(items) {
+// ২. কন্টেন্ট রেন্ডার করার সময় ফিল্টার করা
+function renderFilteredContent(items) {
     items.forEach(item => {
+        // শুধুমাত্র সেই মুভিগুলো দেখাবে যেগুলো movies_db.json এ আছে
+        if (!allowedMovieIds.includes(String(item.id))) return;
         if (!item.poster_path) return;
+
         const div = document.createElement('div');
         div.classList.add('movie-card');
-        
-        // Multi search a 'media_type' thake, seta use kora hoyeche
         const type = item.media_type || currentType;
         
         div.onclick = () => window.location.href = `details.html?id=${item.id}&type=${type}`;
@@ -59,30 +59,7 @@ function renderContent(items) {
     });
 }
 
-function changeType(type) {
-    currentType = type;
-    searchInput.value = ''; // Type change korle search clear hobe
-    document.getElementById('movieBtn').classList.toggle('active', type === 'movie');
-    document.getElementById('tvBtn').classList.toggle('active', type === 'tv');
-    fetchContent();
-}
-
-loadMoreBtn.onclick = () => {
-    currentPage++;
-    fetchContent(false);
-};
-
-genreSelect.onchange = (e) => {
-    currentGenre = e.target.value;
-    fetchContent();
-};
-
-document.getElementById('searchBtn').onclick = () => fetchContent();
-window.onload = () => fetchContent();
-
-// --- Additional Code Starts Here ---
-// Indian and Bangladeshi content priority logic added below as requested
-
+// ৩. রিজিওনাল এবং সার্চ ফাংশনালিটি
 async function fetchRegionalContent(isNew = true) {
     if (isNew) {
         currentPage = 1;
@@ -90,32 +67,34 @@ async function fetchRegionalContent(isNew = true) {
     }
 
     const query = searchInput.value.trim();
-    
+    let url;
+
     if (query) {
-        fetchContent(isNew);
-        return;
+        url = `${BASE_URL}/search/multi?api_key=${API_KEY}&query=${query}&page=${currentPage}`;
+    } else {
+        // ইউজারের কান্ট্রি অনুযায়ী সাজানো (with_origin_country)
+        url = `${BASE_URL}/discover/${currentType}?api_key=${API_KEY}&page=${currentPage}&with_origin_country=${userCountry}&with_genres=${currentGenre}&sort_by=popularity.desc`;
     }
 
-    // TMDB regions: IN (India), BD (Bangladesh)
-    const regions = ['IN', 'BD'];
-    
-    for (const region of regions) {
-        let url = `${BASE_URL}/discover/${currentType}?api_key=${API_KEY}&page=${currentPage}&with_origin_country=${region}&with_genres=${currentGenre}&sort_by=popularity.desc`;
+    try {
+        const res = await fetch(url);
+        const data = await res.json();
+        renderFilteredContent(data.results);
         
-        try {
-            const res = await fetch(url);
-            const data = await res.json();
-            if (data.results.length > 0) {
-                renderContent(data.results);
-            }
-        } catch (error) {
-            console.error(`Error fetching ${region} content:`, error);
+        // যদি ওই দেশের কন্টেন্ট কম থাকে, তবে গ্লোবাল কন্টেন্টও ব্যাকআপ হিসেবে আনা যেতে পারে
+        if (data.results.length < 5 && !query) {
+             const backupUrl = `${BASE_URL}/discover/${currentType}?api_key=${API_KEY}&page=${currentPage}&with_genres=${currentGenre}`;
+             const backupRes = await fetch(backupUrl);
+             const backupData = await backupRes.json();
+             renderFilteredContent(backupData.results);
         }
+    } catch (error) {
+        console.error('Fetch Error:', error);
     }
 }
 
-// Updating default behaviors to prioritize Indian and Bangladeshi content
-window.onload = () => fetchRegionalContent();
+// ইভেন্ট লিসেনার আপডেট
+window.onload = () => initializeApp();
 
 loadMoreBtn.onclick = () => {
     currentPage++;
@@ -127,7 +106,9 @@ genreSelect.onchange = (e) => {
     fetchRegionalContent();
 };
 
-function changeTypeWithRegion(type) {
+document.getElementById('searchBtn').onclick = () => fetchRegionalContent();
+
+function changeType(type) {
     currentType = type;
     searchInput.value = '';
     document.getElementById('movieBtn').classList.toggle('active', type === 'movie');
@@ -135,4 +116,4 @@ function changeTypeWithRegion(type) {
     fetchRegionalContent();
 }
 
-window.changeType = changeTypeWithRegion;
+window.changeType = changeType;
